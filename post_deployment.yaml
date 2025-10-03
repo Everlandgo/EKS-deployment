@@ -1,0 +1,109 @@
+# ================================
+# Deployment
+# ================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post-service-deployment
+  labels:
+    app: post-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: post-service
+  template:
+    metadata:
+      labels:
+        app: post-service
+    spec:
+      containers:
+        - name: post-service
+          image: 245040175511.dkr.ecr.ap-northeast-2.amazonaws.com/post-service:latest
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - secretRef:
+                name: post-db-secret
+            - secretRef:
+                name: post-secrets
+          env:
+            - name: S3_BUCKET_NAME
+              value: "karina-winter"
+            - name: S3_REGION
+              value: "ap-northeast-2"
+            - name: S3_FOLDER_PREFIX
+              value: "image_files"
+            - name: CLOUDFRONT_DOMAIN
+              value: "d1yro8photnpwi.cloudfront.net"
+            - name: API_GATEWAY_DOMAIN
+              value: "api.hhottdogg.shop"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "300m"
+            limits:
+              memory: "1Gi"
+              cpu: "700m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 15
+            periodSeconds: 5
+
+---
+
+# ================================
+# Service
+# ================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: post-service
+  labels:
+    app: post-service
+spec:
+  type: NodePort
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8082
+      nodePort: 30082
+---
+
+# ================================
+# Ingress
+# ================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: post-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /api/v1/posts
+            pathType: Prefix
+            backend:
+              service:
+                name: post-service
+                port:
+                  number: 80
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: post-service
+                port:
+                  number: 80
